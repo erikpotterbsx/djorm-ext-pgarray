@@ -5,9 +5,11 @@ from django.test import TestCase
 from django.core.serializers import serialize, deserialize
 
 from djorm_expressions.base import SqlExpression
-from djorm_pgarray.fields import ArrayFormField
-from .models import IntModel, TextModel, DoubleModel, MTextModel
-from .forms import IntArrayFrom
+from djorm_pgarray.fields import ArrayField
+
+from .models import (
+    IntModel, TextModel, DoubleModel, MTextModel, MultiTypeModel, ChoicesModel)
+from .forms import IntArrayForm
 
 
 class ArrayFieldTests(TestCase):
@@ -15,6 +17,7 @@ class ArrayFieldTests(TestCase):
         IntModel.objects.all().delete()
         TextModel.objects.all().delete()
         DoubleModel.objects.all().delete()
+        MultiTypeModel.objects.all().delete()
 
     def test_empty_create(self):
         instance = IntModel.objects.create(lista=[])
@@ -54,6 +57,16 @@ class ArrayFieldTests(TestCase):
         obj = MTextModel.objects.create(data=[[u"1",u"2"],[u"3",u"ñ"]])
         obj = MTextModel.objects.get(pk=obj.pk)
         self.assertEqual(obj.data, [[u"1",u"2"],[u"3",u"ñ"]])
+
+    def test_correct_behavior_with_int_arrays(self):
+        obj = IntModel.objects.create(lista=[1,2,3])
+        obj = IntModel.objects.get(pk=obj.pk)
+        self.assertEqual(obj.lista, [1, 2, 3])
+
+    def test_correct_behavior_with_float_arrays(self):
+        obj = DoubleModel.objects.create(lista=[1.2,2.4,3])
+        obj = DoubleModel.objects.get(pk=obj.pk)
+        self.assertEqual(obj.lista, [1.2, 2.4, 3])
 
     def test_value_to_string_serializes_correctly(self):
         obj = MTextModel.objects.create(data=[[u"1",u"2"],[u"3",u"ñ"]])
@@ -95,15 +108,41 @@ class ArrayFieldTests(TestCase):
         self.assertEqual(obj.data, [[u"1",u"2"],[u"3",u"ñ"]])
         self.assertEqual(obj_int.lista, [1,2,3])
 
+    def test_can_override_formfield(self):
+        model_field = ArrayField()
+        class FakeFieldClass(object):
+            def __init__(self, *args, **kwargs):
+                pass
+        form_field = model_field.formfield(form_class=FakeFieldClass)
+        self.assertIsInstance(form_field, FakeFieldClass)
+
+    def test_other_types_properly_casted(self):
+        obj = MultiTypeModel.objects.create(
+            smallints=[1, 2, 3],
+            varchars=['One', 'Two', 'Three']
+        )
+        obj = MultiTypeModel.objects.get(pk=obj.pk)
+
+        self.assertEqual(obj.smallints, [1, 2, 3])
+        self.assertEqual(obj.varchars, ['One', 'Two', 'Three'])
+
+    def test_choices_validation(self):
+        obj = ChoicesModel(choices=['A'])
+        obj.full_clean()
+        obj.save()
+
 
 class ArrayFormFieldTests(TestCase):
-
-
     def test_regular_forms(self):
-        form = IntArrayFrom()
+        form = IntArrayForm()
         self.assertFalse(form.is_valid())
-        form = IntArrayFrom({'lista':u'[1,2]'})
+        form = IntArrayForm({'lista':u'[1,2]'})
         self.assertTrue(form.is_valid())
+
+    def test_empty_value(self):
+        form = IntArrayForm({'lista':u''})
+        self.assertTrue(form.is_valid())
+        self.assertEqual(form.cleaned_data['lista'], [])
 
     def test_admin_forms(self):
         site = AdminSite()
@@ -115,3 +154,11 @@ class ArrayFormFieldTests(TestCase):
             form_instance.as_table()
         except TypeError:
             self.fail('HTML Rendering of the form caused a TypeError')
+
+    def test_invalid_error(self):
+        form = IntArrayForm({'lista':1})
+        self.assertFalse(form.is_valid())
+        self.assertEqual(
+            form.errors['lista'],
+            [u'Enter a list of values, joined by commas.  E.g. "a,b,c".']
+            )

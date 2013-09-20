@@ -1,11 +1,23 @@
 # -*- coding: utf-8 -*-
 
+import json
+
+from django import forms
+from django.core.exceptions import ValidationError
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
 from django.utils import six
 from django.utils.encoding import force_text
-from django import forms
 from django.utils.translation import ugettext_lazy as _
-from django.core.exceptions import ValidationError
+
+
+TYPES = {
+    'int': int,
+    'smallint': int,
+    'text': str,
+    'double precision': float,
+    'varchar': str,
+}
 
 
 class SerializableList(list):
@@ -62,28 +74,18 @@ def _cast_to_unicode(data):
     return data
 
 
-def _sub_unicode(value):
-    import re
-    return re.sub(r"\\u([0-9a-f]{4})", lambda m: unichr(int(m.group(1), 16)), value)
-
-
-def _unserialize(value):
-    if not isinstance(value, six.string_types):
-        return _cast_to_unicode(value)
-    import json
-    value2 = _sub_unicode(value)
-    try:
-        jsonval = json.loads(value2)
-        return _cast_to_unicode(jsonval)
-    except ValueError:
-        return _cast_to_unicode(value)
-
-
 class ArrayField(models.Field):
     __metaclass__ = models.SubfieldBase
 
     def __init__(self, *args, **kwargs):
         self._array_type = kwargs.pop('dbtype', 'int')
+        type_key = self._array_type.split('(')[0]
+
+        try:
+            self._type_cast = TYPES[type_key]
+        except KeyError:
+            raise TypeError('invalid postgreSQL type: %s' % self._array_type)
+
         self._dimension = kwargs.pop('dimension', 1)
         kwargs.setdefault('blank', True)
         kwargs.setdefault('null', True)
@@ -91,7 +93,7 @@ class ArrayField(models.Field):
         super(ArrayField, self).__init__(*args, **kwargs)
 
     def formfield(self, **params):
-        params['form_class'] = ArrayFormField
+        params.setdefault('form_class', ArrayFormField)
         return super(ArrayField, self).formfield(**params)
 
     def db_type(self, connection):
@@ -99,18 +101,9 @@ class ArrayField(models.Field):
 
     def get_db_prep_value(self, value, connection, prepared=False):
         value = value if prepared else self.get_prep_value(value)
-        if not value:
+        if not value or isinstance(value, six.string_types):
             return value
-        elif isinstance(value, six.string_types):
-            import json
-            value2 = _sub_unicode(value)
-            try:
-                jsonval = json.loads(value2)
-                return jsonval
-            except ValueError:
-                return value
-
-        return value
+        return _cast_to_type(value, self._type_cast)
 
     def get_prep_value(self, value):
         return value
@@ -120,7 +113,13 @@ class ArrayField(models.Field):
 
     def value_to_string(self, obj):
         value = self._get_val_from_obj(obj)
-        return self.get_prep_value(value)
+        return json.dumps(self.get_prep_value(value),
+                          cls=DjangoJSONEncoder)
+
+    def validate(self, value, model_instance):
+        for val in value:
+            super(ArrayField, self).validate(val, model_instance)
+
 
 # South support
 try:
@@ -140,12 +139,13 @@ except ImportError:
 
 
 class ArrayFormField(forms.Field):
-
-    error_messages = {
+    default_error_messages = {
         'invalid': _('Enter a list of values, joined by commas.  E.g. "a,b,c".'),
     }
 
-    def __init__(self, max_length=None, min_length=None, delim=None, *args, **kwargs):
+    def __init__(
+            self, max_length=None, min_length=None, delim=None,
+            *args, **kwargs):
         if delim is not None:
             self.delim = delim
         else:
@@ -153,17 +153,21 @@ class ArrayFormField(forms.Field):
         super(ArrayFormField, self).__init__(*args, **kwargs)
 
     def clean(self, value):
+        if not value:
+            return []
+        # If Django already parsed value to list
+        if isinstance(value, list):
+            return value
         try:
             return value.split(self.delim)
-        except:
+        except Exception:
             raise ValidationError(self.error_messages['invalid'])
 
     def prepare_value(self, value):
         if value:
-            return self.delim.join(value)
+            return self.delim.join(str(v) for v in value)
         else:
             return super(ArrayFormField, self).prepare_value(value)
-
 
     def to_python(self, value):
         return value.split(self.delim)
