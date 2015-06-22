@@ -13,7 +13,7 @@ from django.utils import six
 from django.utils.encoding import force_text
 from django.utils.translation import ugettext_lazy as _
 
-from .utils import parse_array, edit_string_for_array  # NOQA
+# from .utils import parse_array, edit_string_for_array  # NOQA
 
 
 TYPES = {
