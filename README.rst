@@ -1,6 +1,8 @@
 djorm-pgarray
 =============
 
+NOTE: Forked to allow several patches required.
+
 NOTE: pypi package name changed from `djorm-ext-pgarray` to more simple `djorm-pgarray`
 
 PostgreSQL array field for Django.

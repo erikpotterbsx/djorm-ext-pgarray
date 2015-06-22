@@ -13,6 +13,8 @@ from django.utils import six
 from django.utils.encoding import force_text
 from django.utils.translation import ugettext_lazy as _
 
+from .utils import parse_array, edit_string_for_array  # NOQA
+
 
 TYPES = {
     "int": int,
@@ -84,6 +86,7 @@ def _cast_to_type(data, type_cast):
     if type_cast == str:
         return force_text(data)
     return type_cast(data)
+
 
 def _unserialize(value):
     if not isinstance(value, six.string_types):
@@ -305,7 +308,7 @@ if django.VERSION[:2] >= (1, 7):
             lhs, lhs_params = self.process_lhs(qn, connection)
             rhs, rhs_params = self.process_rhs(qn, connection)
             params = lhs_params + rhs_params
-            var = "%s @> %s" % (lhs, rhs), params
+            var = "%s @> %s::%s" % (lhs, rhs, self.lhs.output_field.db_type(connection)), params
             return var
 
     class ContainedByLookup(Lookup):
@@ -315,7 +318,7 @@ if django.VERSION[:2] >= (1, 7):
             lhs, lhs_params = self.process_lhs(qn, connection)
             rhs, rhs_params = self.process_rhs(qn, connection)
             params = lhs_params + rhs_params
-            return "%s <@ %s" % (lhs, rhs), params
+            return "%s <@ %s::%s" % (lhs, rhs, self.lhs.output_field.db_type(connection)), params
 
     class OverlapLookup(Lookup):
         lookup_name = "overlap"
@@ -324,7 +327,7 @@ if django.VERSION[:2] >= (1, 7):
             lhs, lhs_params = self.process_lhs(qn, connection)
             rhs, rhs_params = self.process_rhs(qn, connection)
             params = lhs_params + rhs_params
-            return "%s && %s" % (lhs, rhs), params
+            return "%s && %s::%s" % (lhs, rhs, self.lhs.output_field.db_type(connection)), params
 
     class ArrayLenTransform(Transform):
         lookup_name = "len"
