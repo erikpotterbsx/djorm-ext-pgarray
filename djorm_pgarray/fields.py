@@ -147,6 +147,8 @@ class ArrayField(six.with_metaclass(models.SubfieldBase, models.Field)):
         return value if isinstance(value, (six.string_types, list,)) or not isinstance(value, Iterable) else list(value)
 
     def to_python(self, value):
+        if value is None or value == u"":
+            return None
         return _unserialize(value)
 
     def value_to_string(self, obj):
@@ -267,7 +269,8 @@ class ArrayFormField(forms.Field):
             self.delim = u","
 
         self.strip = strip
-
+        if 'initial' in kwargs and kwargs['initial'] is None:
+            kwargs['initial'] = []
         super(ArrayFormField, self).__init__(*args, **kwargs)
 
     def clean(self, value):
