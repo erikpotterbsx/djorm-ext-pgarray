@@ -298,6 +298,8 @@ class ArrayFormField(forms.Field):
     def to_python(self, value):
         if value is None or value == u"":
             return []
+        elif isinstance(value, (tuple, list)):
+            return value
         return value.split(self.delim)
 
 
